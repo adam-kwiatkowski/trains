@@ -1,4 +1,5 @@
 export interface TripData {
+  Id: number;
   From: string;
   To: string;
   Date: string;

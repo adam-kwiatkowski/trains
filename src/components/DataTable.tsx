@@ -1,60 +1,96 @@
-import { useEffect, useState } from 'react';
 import {TripData} from "../types.ts";
-import data from "../assets/data.json";
+import {Table, TableBody, TableCell, TableColumn, TableHeader, TableRow} from "@nextui-org/table";
+import {Selection, SortDescriptor} from "@nextui-org/react";
+import React from "react";
+import {columns, trips} from "../data";
+
+const INITIAL_VISIBLE_COLUMNS = ["From", "To", "Date", "Departure", "Arrival", "Duration", "Base price", "Discount", "Price"];
 
 export default function DataTable() {
-  const [trips, setTrips] = useState<TripData[]>([]);
+  const [selectedTrip, setSelectedTrip] = React.useState<TripData | null>(null);
+  const [sortDescriptor, setSortDescriptor] = React.useState<SortDescriptor>({column: "Id", direction: "ascending"});
+  const [visibleColumns, setVisibleColumns] = React.useState<Selection>(new Set(INITIAL_VISIBLE_COLUMNS));
 
-  useEffect(() => {
-    const tripData: TripData[] = [];
-    data.forEach((trip) => {
-      tripData.push({
-        From: trip.From,
-        To: trip.To,
-        Date: trip.Date,
-        Departure: trip.Departure,
-        Arrival: trip.Arrival,
-        Duration: trip.Duration,
-        'Base price': parseFloat(trip['Base price'].replace(' zł', '').replace(',', '.')),
-        Discount: parseFloat(`${trip.Discount}`.replace(',', '.')),
-        Price: parseFloat(trip.Price.replace(' zł', '').replace(',', '.')),
-      });
+  const headerColumns = React.useMemo(() => {
+    if (visibleColumns === "all") return columns;
+
+    return columns.filter((column) => Array.from(visibleColumns).includes(column.uid));
+  }, [visibleColumns]);
+
+  const filteredItems = React.useMemo(() => {
+    let items = [...trips];
+    if (selectedTrip) {
+      items = items.filter(trip => trip.From === selectedTrip.To && trip.Date >= selectedTrip.Date && trip.Departure >= selectedTrip.Arrival);
+      items = [selectedTrip, ...items]
+    }
+    return items;
+  }, [selectedTrip]);
+
+  const sortedItems = React.useMemo(() => {
+    return [...filteredItems].sort((a, b) => {
+      const first = a[sortDescriptor.column as keyof TripData];
+      const second = b[sortDescriptor.column as keyof TripData];
+
+      const cmp = first < second ? -1 : first > second ? 1 : 0;
+
+      return sortDescriptor.direction === "descending" ? -cmp : cmp;
     });
+  }, [filteredItems, sortDescriptor]);
 
-    setTrips(tripData);
-    console.log(tripData)
-  }, []);
+  const handleSelectionChange = (selection: Selection) => {
+    if (selection === "all") return;
+    if (selection.size === 0) {
+      setSelectedTrip(null);
+      setVisibleColumns(new Set(INITIAL_VISIBLE_COLUMNS));
+      return;
+    }
+    if (selection.size === 1) {
+      const index = selection.values().next().value as number;
+      setSelectedTrip(sortedItems[index]);
+      setVisibleColumns(new Set([...INITIAL_VISIBLE_COLUMNS, "Total"]));
+    }
+  }
 
-  return (
-    <table>
-      <thead>
-        <tr>
-          <th>From</th>
-          <th>To</th>
-          <th>Date</th>
-          <th>Departure</th>
-          <th>Arrival</th>
-          <th>Duration</th>
-          <th>Base price</th>
-          <th>Discount</th>
-          <th>Price</th>
-        </tr>
-      </thead>
-      <tbody>
-        {trips.map((trip, index) => (
-          <tr key={index}>
-            <td>{trip.From}</td>
-            <td>{trip.To}</td>
-            <td>{trip.Date}</td>
-            <td>{trip.Departure}</td>
-            <td>{trip.Arrival}</td>
-            <td>{trip.Duration}</td>
-            <td>{trip['Base price']}</td>
-            <td>{trip.Discount}</td>
-            <td>{trip.Price}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
+  const renderCell = React.useCallback((trip: TripData, column: React.Key) => {
+    const cellValue = trip[column as keyof TripData];
+    switch (column) {
+      case "Base price":
+      case "Discount":
+      case "Price":
+        return `${cellValue} zł`;
+      case "Total":
+        if (selectedTrip && trip !== selectedTrip) {
+          return `${selectedTrip.Price + trip.Price} zł`;
+        }
+        return "";
+      default:
+        return cellValue;
+    }
+  }, [selectedTrip]);
+
+  return (<Table
+      sortDescriptor={sortDescriptor}
+      onSortChange={setSortDescriptor}
+      selectionMode="single"
+      onSelectionChange={handleSelectionChange}
+  >
+    <TableHeader columns={headerColumns}>
+      {(column) => (
+          <TableColumn
+              key={column.uid}
+              align={column.uid === "actions" ? "center" : "start"}
+              allowsSorting={column.sortable}
+          >
+            {column.name}
+          </TableColumn>
+      )}
+    </TableHeader>
+    <TableBody emptyContent={"No users found"} items={sortedItems}>
+      {(item) => (
+          <TableRow key={item.Id}>
+            {(columnKey) => <TableCell>{renderCell(item, columnKey)}</TableCell>}
+          </TableRow>
+      )}
+    </TableBody>
+  </Table>);
 }
